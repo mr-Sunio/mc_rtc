@@ -21,7 +21,9 @@ CompliantEndEffectorTask::CompliantEndEffectorTask(const std::string & bodyName,
 : EndEffectorTask(robots.robot(robotIndex).frame(bodyName), stiffness, weight),
   compliant_matrix_(Eigen::Matrix6d::Zero()), robot_(robots.robot(robotIndex)),
   tvm_robot_(robots.robot(robotIndex).tvmRobot()), rIdx_(robotIndex), bodyName_(bodyName),
-  frame_(robots.robot(robotIndex).frame(bodyName)), refAccel_(Eigen::Vector6d::Zero())
+  frame_(robots.robot(robotIndex).frame(bodyName)), refAccel_(Eigen::Vector6d::Zero()),
+  inputAccel_(Eigen::VectorXd::Zero(robots.robot(robotIndex).mb().nrDof())), disturbance_(Eigen::Vector6d::Zero()),
+  disturbedAccel_(Eigen::Vector6d::Zero())
 {
   switch(backend_)
   {
@@ -77,30 +79,27 @@ void CompliantEndEffectorTask::addToSolver(mc_solver::QPSolver & solver)
 void CompliantEndEffectorTask::update(mc_solver::QPSolver & solver)
 {
   Eigen::MatrixXd J = jac_->jacobian(solver.robot(rIdx_).mb(), solver.robot(rIdx_).mbc());
-  Eigen::VectorXd acc;
-
   if(backend_ == Backend::Tasks)
   {
-    if(robot_.compensationTorquesAcc()) { acc = robot_.compensationTorquesAcc().value(); }
+    if(robot_.compensationTorquesAcc()) { inputAccel_ = robot_.compensationTorquesAcc().value(); }
     else
     {
-      acc = robot_.externalTorquesAcc();
+      inputAccel_ = robot_.externalTorquesAcc();
     }
   }
   else
   {
-    if(tvm_robot_.alphaDCompensation()) { acc = tvm_robot_.alphaDCompensation().value(); }
+    if(tvm_robot_.alphaDCompensation()) { inputAccel_ = tvm_robot_.alphaDCompensation().value(); }
     else
     {
-      acc = tvm_robot_.alphaDExternal();
+      inputAccel_ = tvm_robot_.alphaDExternal();
     }
   }
-  Eigen::Vector6d disturbance = J * acc;
+  disturbance_ = J * inputAccel_;
+  disturbedAccel_ = refAccel_ + compliant_matrix_ * disturbance_;
 
-  Eigen::Vector6d disturbedAccel = refAccel_ + compliant_matrix_ * disturbance;
-
-  EndEffectorTask::positionTask->refAccel(disturbedAccel.tail(3));
-  EndEffectorTask::orientationTask->refAccel(disturbedAccel.head(3));
+  EndEffectorTask::positionTask->refAccel(disturbedAccel_.tail(3));
+  EndEffectorTask::orientationTask->refAccel(disturbedAccel_.head(3));
 
   // EndEffectorTask::update(solver);
 }
@@ -166,6 +165,18 @@ void CompliantEndEffectorTask::addToGUI(mc_rtc::gui::StateBuilder & gui)
                      { return getComplianceVector(); }, [this](Eigen::Vector6d v) { setComplianceVector(v); }));
 
   EndEffectorTask::addToGUI(gui);
+}
+
+void CompliantEndEffectorTask::addToLogger(mc_rtc::Logger & logger)
+{
+  EndEffectorTask::addToLogger(logger);
+  logger.addLogEntry(name_ + "_compliance", this, [this]() -> Eigen::Vector6d { return compliant_matrix_.diagonal(); });
+  logger.addLogEntry(name_ + "_complianceInputAccel", this,
+                     [this]() -> const Eigen::VectorXd & { return inputAccel_; });
+  logger.addLogEntry(name_ + "_complianceDisturbance", this,
+                     [this]() -> const Eigen::Vector6d & { return disturbance_; });
+  logger.addLogEntry(name_ + "_complianceRefAccel", this,
+                     [this]() -> const Eigen::Vector6d & { return disturbedAccel_; });
 }
 
 } // namespace mc_tasks

@@ -27,6 +27,8 @@ public:
   bool isCompliant(void);
 
 protected:
+  void addToLogger(mc_rtc::Logger & logger) override;
+
   void update(mc_solver::QPSolver & solver);
 
   void addToGUI(mc_rtc::gui::StateBuilder & gui);
@@ -37,6 +39,9 @@ protected:
   mc_tvm::Robot & tvm_robot_;
 
   Eigen::VectorXd refAccel_;
+  Eigen::VectorXd inputAccel_;
+  Eigen::VectorXd disturbance_;
+  Eigen::VectorXd disturbedAccel_;
 };
 
 } // namespace mc_tasks

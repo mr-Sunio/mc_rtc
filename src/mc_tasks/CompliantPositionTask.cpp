@@ -16,7 +16,9 @@ CompliantPositionTask::CompliantPositionTask(const std::string & bodyName_,
                                              double weight)
 : PositionTask(robots.robot(robotIndex).frame(bodyName_), stiffness, weight), Gamma_(Eigen::Matrix3d::Zero()),
   robot_(robots.robot(robotIndex)), tvm_robot_(robots.robot(robotIndex).tvmRobot()), rIdx_(robotIndex),
-  frame_(robots.robot(robotIndex).frame(bodyName_)), refAccel_(Eigen::Vector3d::Zero())
+  frame_(robots.robot(robotIndex).frame(bodyName_)), refAccel_(Eigen::Vector3d::Zero()),
+  inputAccel_(Eigen::VectorXd::Zero(robots.robot(robotIndex).mb().nrDof())), frameAccel_(Eigen::Vector3d::Zero()),
+  disturbance_(Eigen::Vector3d::Zero()), disturbedAccel_(Eigen::Vector3d::Zero())
 {
   switch(backend_)
   {
@@ -42,28 +44,26 @@ void CompliantPositionTask::refAccel(const Eigen::Vector3d & refAccel) noexcept
 void CompliantPositionTask::update(mc_solver::QPSolver & solver)
 {
   auto J = jac_->jacobian(robots.robot(rIndex).mb(), robots.robot(rIndex).mbc());
-  Eigen::VectorXd acc;
   if(backend_ == Backend::Tasks)
   {
-    if(solver.robot().compensationTorquesAcc()) { acc = solver.robot().compensationTorquesAcc().value(); }
+    if(solver.robot().compensationTorquesAcc()) { inputAccel_ = solver.robot().compensationTorquesAcc().value(); }
     else
     {
-      acc = solver.robot().externalTorquesAcc();
+      inputAccel_ = solver.robot().externalTorquesAcc();
     }
   }
   else
   {
-    if(tvm_robot_.alphaDCompensation()) { acc = tvm_robot_.alphaDCompensation().value(); }
+    if(tvm_robot_.alphaDCompensation()) { inputAccel_ = tvm_robot_.alphaDCompensation().value(); }
     else
     {
-      acc = tvm_robot_.alphaDExternal();
+      inputAccel_ = tvm_robot_.alphaDExternal();
     }
   }
-  Eigen::Vector3d frame_acc = (J * acc).tail(3);
-  Eigen::Vector3d disturbance = Gamma_ * frame_acc;
-  // mc_rtc::log::info("Ref accel from disturbance : {}", disturbance.transpose());
-  Eigen::Vector3d disturbedAccel = refAccel_ + disturbance;
-  PositionTask::refAccel(disturbedAccel);
+  frameAccel_ = (J * inputAccel_).tail(3);
+  disturbance_ = Gamma_ * frameAccel_;
+  disturbedAccel_ = refAccel_ + disturbance_;
+  PositionTask::refAccel(disturbedAccel_);
   PositionTask::update(solver);
 }
 
@@ -95,6 +95,20 @@ void CompliantPositionTask::addToSolver(mc_solver::QPSolver & solver)
 {
   PositionTask::addToSolver(solver);
   jac_ = new rbd::Jacobian(robots.robot(rIdx_).mb(), frame_.body());
+}
+
+void CompliantPositionTask::addToLogger(mc_rtc::Logger & logger)
+{
+  PositionTask::addToLogger(logger);
+  logger.addLogEntry(name_ + "_compliance", this, [this]() -> Eigen::Vector3d { return Gamma_.diagonal(); });
+  logger.addLogEntry(name_ + "_complianceInputAccel", this,
+                     [this]() -> const Eigen::VectorXd & { return inputAccel_; });
+  logger.addLogEntry(name_ + "_complianceFrameAccel", this,
+                     [this]() -> const Eigen::Vector3d & { return frameAccel_; });
+  logger.addLogEntry(name_ + "_complianceDisturbance", this,
+                     [this]() -> const Eigen::Vector3d & { return disturbance_; });
+  logger.addLogEntry(name_ + "_complianceRefAccel", this,
+                     [this]() -> const Eigen::Vector3d & { return disturbedAccel_; });
 }
 
 void CompliantPositionTask::addToGUI(mc_rtc::gui::StateBuilder & gui)

@@ -16,7 +16,10 @@ CompliantPostureTask::CompliantPostureTask(const mc_solver::QPSolver & solver,
 : PostureTask(solver, rIndex, stiffness, weight),
   gamma_(Eigen::VectorXd::Zero(solver.robots().robot(rIndex).mb().nrDof())), robot_(solver.robots().robot(rIndex)),
   tvm_robot_(solver.robots().robot(rIndex).tvmRobot()),
-  refAccel_(Eigen::VectorXd::Zero(solver.robots().robot(rIndex).mb().nrDof()))
+  refAccel_(Eigen::VectorXd::Zero(solver.robots().robot(rIndex).mb().nrDof())),
+  inputAccel_(Eigen::VectorXd::Zero(solver.robots().robot(rIndex).mb().nrDof())),
+  disturbance_(Eigen::VectorXd::Zero(solver.robots().robot(rIndex).mb().nrDof())),
+  disturbedAccel_(Eigen::VectorXd::Zero(solver.robots().robot(rIndex).mb().nrDof()))
 {
   switch(backend_)
   {
@@ -39,30 +42,25 @@ void CompliantPostureTask::refAccel(const Eigen::VectorXd & refAccel) noexcept
 
 void CompliantPostureTask::update(mc_solver::QPSolver & solver)
 {
-  Eigen::VectorXd disturbance;
-  Eigen::VectorXd acc;
   if(backend_ == Backend::Tasks)
   {
-    if(robot_.compensationTorquesAcc()) { acc = robot_.compensationTorquesAcc().value(); }
+    if(robot_.compensationTorquesAcc()) { inputAccel_ = robot_.compensationTorquesAcc().value(); }
     else
     {
-      acc = robot_.externalTorquesAcc();
+      inputAccel_ = robot_.externalTorquesAcc();
     }
   }
   else
   {
-    if(tvm_robot_.alphaDCompensation()) { acc = tvm_robot_.alphaDCompensation().value(); }
+    if(tvm_robot_.alphaDCompensation()) { inputAccel_ = tvm_robot_.alphaDCompensation().value(); }
     else
     {
-      acc = tvm_robot_.alphaDExternal();
+      inputAccel_ = tvm_robot_.alphaDExternal();
     }
   }
-  disturbance = gamma_.asDiagonal() * acc;
-
-  // mc_rtc::log::info("Ref accel from disturbance : {}", disturbance.transpose());
-  // mc_rtc::log::info("Ref accel : {}", refAccel_.transpose());
-  Eigen::VectorXd disturbedAccel = refAccel_ + disturbance;
-  PostureTask::refAccel(disturbedAccel);
+  disturbance_ = gamma_.asDiagonal() * inputAccel_;
+  disturbedAccel_ = refAccel_ + disturbance_;
+  PostureTask::refAccel(disturbedAccel_);
   // PostureTask::update(solver);
 }
 
@@ -83,6 +81,18 @@ void CompliantPostureTask::makeCompliant(Eigen::VectorXd gamma)
 bool CompliantPostureTask::isCompliant(void)
 {
   return gamma_.norm() > 0;
+}
+
+void CompliantPostureTask::addToLogger(mc_rtc::Logger & logger)
+{
+  PostureTask::addToLogger(logger);
+  logger.addLogEntry(name_ + "_compliance", this, [this]() -> const Eigen::VectorXd & { return gamma_; });
+  logger.addLogEntry(name_ + "_complianceInputAccel", this,
+                     [this]() -> const Eigen::VectorXd & { return inputAccel_; });
+  logger.addLogEntry(name_ + "_complianceDisturbance", this,
+                     [this]() -> const Eigen::VectorXd & { return disturbance_; });
+  logger.addLogEntry(name_ + "_complianceRefAccel", this,
+                     [this]() -> const Eigen::VectorXd & { return disturbedAccel_; });
 }
 
 void CompliantPostureTask::addToGUI(mc_rtc::gui::StateBuilder & gui)

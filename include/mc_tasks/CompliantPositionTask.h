@@ -35,6 +35,8 @@ public:
   // void load(mc_solver::QPSolver & solver, const mc_rtc::Configuration & config) override;
 
 protected:
+  void addToLogger(mc_rtc::Logger & logger) override;
+
   void addToSolver(mc_solver::QPSolver & solver) override;
 
   void update(mc_solver::QPSolver & solver) override;
@@ -54,6 +56,10 @@ protected:
   rbd::Jacobian * jac_;
 
   Eigen::Vector3d refAccel_;
+  Eigen::VectorXd inputAccel_;
+  Eigen::Vector3d frameAccel_;
+  Eigen::Vector3d disturbance_;
+  Eigen::Vector3d disturbedAccel_;
 };
 
 } // namespace mc_tasks
