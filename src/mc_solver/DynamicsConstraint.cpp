@@ -147,6 +147,20 @@ DynamicsConstraint::DynamicsConstraint(const mc_rbdyn::Robots & robots,
 {
 }
 
+DynamicsConstraint::DynamicsConstraint(const mc_rbdyn::Robots & robots,
+                                       unsigned int robotIndex,
+                                       double timeStep,
+                                       const std::array<double, 3> & damper,
+                                       const std::array<double, 2> & damperSecond,
+                                       double velocityPercent,
+                                       bool infTorque,
+                                       bool compensateExtTorques)
+: KinematicsConstraint(robots, robotIndex, timeStep, damper, damperSecond, velocityPercent),
+  motion_constr_(initialize(backend_, robots, robotIndex, timeStep, infTorque, compensateExtTorques)),
+  robotIndex_(robotIndex)
+{
+}
+
 void DynamicsConstraint::update(QPSolver & solver)
 {
   if(backend_ == QPSolver::Backend::Tasks)
