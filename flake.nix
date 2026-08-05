@@ -13,8 +13,33 @@
 
   outputs =
     inputs:
+    let
+      # How to build mc_rtc from this very tree, and nothing else. Kept separate from the
+      # standalone-flake settings below (mc-rtc-nix.*, mc-rtc-superbuild.*) because those are
+      # this flake's own choices and must not follow the packaging into downstream flakes that
+      # import `flakeModule`.
+      mcRtcModule =
+        { lib, ... }:
+        {
+          overrideAttrs.mc-rtc =
+            { drv-prev, pkgs-final, ... }:
+            {
+              src = lib.cleanSource ./.;
+              # FIXME: enable testing:
+              # - testing fails in nix build
+              # - testRobotModule fails in nix devel
+              cmakeFlags = (drv-prev.cmakeFlags or [ ]) ++ [ (lib.cmakeBool "BUILD_TESTING" true) ];
+              nativeBuildInputs = drv-prev.nativeBuildInputs ++ [ pkgs-final.ninja ];
+              nativeCheckInputs = [
+                # workaround for some tests trying to write to /homeless-shelter
+                pkgs-final.writableTmpDirAsHomeHook
+              ];
+              doCheck = false;
+            };
+        };
+    in
     inputs.flake-parts.lib.mkFlake { inherit inputs; } (
-      { lib, ... }:
+      args@{ lib, ... }:
       {
         systems = import inputs.systems;
         imports = [
@@ -32,23 +57,7 @@
                 shells.defaultShells.release = true;
                 shells.defaultShells.devel = false;
               };
-            flakoboros = {
-              overrideAttrs.mc-rtc =
-                { drv-prev, pkgs-final, ... }:
-                {
-                  src = lib.cleanSource ./.;
-                  # FIXME: enable testing:
-                  # - testing fails in nix build
-                  # - testRobotModule fails in nix devel
-                  cmakeFlags = (drv-prev.cmakeFlags or [ ]) ++ [ (lib.cmakeBool "BUILD_TESTING" true) ];
-                  nativeBuildInputs = drv-prev.nativeBuildInputs ++ [ pkgs-final.ninja ];
-                  nativeCheckInputs = [
-                    # workaround for some tests trying to write to /homeless-shelter
-                    pkgs-final.writableTmpDirAsHomeHook
-                  ];
-                  doCheck = false;
-                };
-            };
+            flakoboros = mcRtcModule args;
           }
         ];
         perSystem =
@@ -72,5 +81,10 @@
             };
           };
       }
-    );
+    )
+    // {
+      # Lets downstream flakes build *this* mc_rtc without restating how: they import this and
+      # drop their own `overrideAttrs.mc-rtc`. Mirrors mc-rtc-kinova-base / -external-forces.
+      flakeModule = args: { flakoboros = mcRtcModule args; };
+    };
 }
