@@ -537,6 +537,7 @@ set(mc_tasks_SRC
     mc_tasks/CompliantPositionTask.cpp
     mc_tasks/CompliantOrientationTask.cpp
     mc_tasks/CompliantEndEffectorTask.cpp
+    mc_tasks/CompliantTransformTask.cpp
 )
 
 set(mc_tasks_HDR
@@ -577,6 +578,7 @@ set(mc_tasks_HDR
     ../include/mc_tasks/CompliantPositionTask.h
     ../include/mc_tasks/CompliantOrientationTask.h
     ../include/mc_tasks/CompliantEndEffectorTask.h
+    ../include/mc_tasks/CompliantTransformTask.h
 )
 
 add_library(mc_tasks SHARED ${mc_tasks_SRC} ${mc_tasks_HDR})
